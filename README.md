@@ -132,7 +132,9 @@ MX `import` blocks stay in the configuration. Terraform skips them once those ad
 - `terraform fmt -check -recursive`
 - `terraform init -backend=false` and `terraform validate`
 - `tflint`
-- `terraform plan`, then a pull-request comment, only when `CLOUDFLARE_API_TOKEN`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_ENDPOINT` are all set. Otherwise the plan step logs a skip and the job stays green. When the plan does run, the job accepts `No changes` or `10 to add, 0 to change, 1 to destroy` (the Pages cutover, MX untouched). Any other plan fails.
+- `terraform plan`, then a pull-request comment, only when `CLOUDFLARE_API_TOKEN`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_ENDPOINT` are all set. Otherwise the plan step logs a skip and the job stays green. A successful plan, including `10 to add, 0 to change, 1 to destroy`, does not fail the job. The plan comment is still posted. `terraform plan` errors still fail the job. The import-only gate (`scripts/assert-import-only-plan.py`) runs only when the repository variable `TF_PLAN_IMPORT_ONLY` is `true`. Leave that variable unset for this cutover.
+
+The workflow trigger is `pull_request`. It must stay that way. `pull_request_target` would run with this repository's secrets, including on fork pull requests. Fork pull requests do not receive the four Actions secrets, and the plan step is skipped for them.
 
 **Apply** (`.github/workflows/terraform-apply.yml`) runs only from `workflow_dispatch` on `main`. It never runs on push or on a pull request. The `plan` job prints the plan. The `apply` job is bound to the `production` environment, so it waits for the required reviewer. Read the plan job log, then approve only when it is `10 to add, 0 to change, 1 to destroy` or `No changes`. Do not approve a plan that creates the Pages records without destroying `46.101.80.89`.
 
