@@ -1,0 +1,27 @@
+# Terraform working directory and local state
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+plan.txt
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Partial backend config contains the R2 endpoint, which embeds the account id.
+backend.hcl
+
+# Variable files may contain tokens. Examples are allowed.
+*.auto.tfvars
+*.tfvars
+!*.tfvars.example
+
+# Tool caches
+.tflint.d/
+.terraform.tfstate.lock.info
+__pycache__/
+*.pyc

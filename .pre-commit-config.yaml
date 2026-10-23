@@ -1,0 +1,15 @@
+# Optional. Install with: pre-commit install
+# Requires Terraform on PATH. Does not call the Cloudflare API.
+repos:
+  - repo: local
+    hooks:
+      - id: terraform-fmt
+        name: terraform fmt
+        entry: terraform fmt -recursive -check
+        language: system
+        pass_filenames: false
+      - id: terraform-validate
+        name: terraform validate
+        entry: bash -c 'terraform -chdir=cloudflare/jarvis-gg init -backend=false -input=false && terraform -chdir=cloudflare/jarvis-gg validate'
+        language: system
+        pass_filenames: false
