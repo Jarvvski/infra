@@ -2,7 +2,7 @@
 
 Terraform for Adam's personal infrastructure. This repository currently manages Cloudflare DNS for **jarvis.gg** and is meant to grow zone by zone (`cloudflare/<zone>/`, and later a `modules/` directory when a pattern is shared).
 
-The first apply adopts the records that already exist. It must not create, update, or delete anything in Cloudflare. A later change will point the site at GitHub Pages; the apex A record stays `46.101.80.89` (proxied) until that change.
+Mail (the Google Workspace MX records) stays as imported. The website points at GitHub Pages for `jarvvski.github.io`: apex `A`/`AAAA` records, `www` as a CNAME, and the Pages domain-verification TXT record. Those addresses were checked against the [GitHub Pages custom-domain docs](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/managing-a-custom-domain-for-your-github-pages-site) on 2026-10-23. Every Pages record is DNS-only (`proxied = false`) with automatic TTL (`1`).
 
 | | |
 | --- | --- |
@@ -99,13 +99,21 @@ curl -sS \
   | jq '.result[] | {id,type,name,content,priority,ttl,proxied,comment}'
 ```
 
-The first plan, with an empty state and the `import` blocks in `imports.tf`, must be:
+Apply the import pull request before this GitHub Pages change. That first apply, against the import configuration, must be:
 
 ```text
 Plan: 6 to import, 0 to add, 0 to change, 0 to destroy.
 ```
 
-That plan only writes Terraform state. After it has been applied, every later plan must say `No changes`. If the plan wants to add, change, or destroy a record, stop. Fix the configuration so it matches the API output above. The priorities, TTLs (`1` means automatic), and proxied flags in `main.tf` are the values returned by the API on 2026-10-23.
+It only writes Terraform state, including the old apex `A` record `46.101.80.89`. Then merge and apply this change. With that record in state, the plan must be:
+
+```text
+Plan: 10 to add, 0 to change, 1 to destroy.
+```
+
+Destroy is only `cloudflare_dns_record.apex` (`A` `jarvis.gg` `46.101.80.89`). The ten adds are four GitHub Pages `A` records, four `AAAA` records, the `www` CNAME, and the `_github-pages-challenge-jarvvski` TXT record. MX records stay unchanged. After that apply, later plans must say `No changes`.
+
+If the import has not been applied, this configuration cannot see `46.101.80.89` and will leave it in Cloudflare next to the new Pages addresses. Do not apply in that case.
 
 Apply once you have read that plan:
 
@@ -115,7 +123,7 @@ terraform apply -input=false
 
 Prefer the GitHub apply workflow below for the real apply so there is a review gate. State locking is off: the S3 lockfile argument needs Terraform 1.10, and this stack stays on `>= 1.6.3` for R2 (`skip_s3_checksum`). Do not run a local apply while the GitHub apply workflow is running.
 
-`import` blocks stay in the configuration. Terraform skips them once those addresses are in state. If the state object is lost, the next plan imports the same ids again.
+MX `import` blocks stay in the configuration. Terraform skips them once those addresses are in state. If the state object is lost, the next plan imports the same MX ids again. The old apex `A` record is not imported anymore; Terraform destroys it only when it is already in state.
 
 ## GitHub Actions
 
@@ -124,22 +132,31 @@ Prefer the GitHub apply workflow below for the real apply so there is a review g
 - `terraform fmt -check -recursive`
 - `terraform init -backend=false` and `terraform validate`
 - `tflint`
-- `terraform plan`, then a pull-request comment, only when `CLOUDFLARE_API_TOKEN`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_ENDPOINT` are all set. Otherwise the plan step logs a skip and the job stays green. When the plan does run, the job fails if it would add, change, or destroy infrastructure. An import-only plan is success.
+- `terraform plan`, then a pull-request comment, only when `CLOUDFLARE_API_TOKEN`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_ENDPOINT` are all set. Otherwise the plan step logs a skip and the job stays green. When the plan does run, the job accepts `No changes` or `10 to add, 0 to change, 1 to destroy` (the Pages cutover, MX untouched). Any other plan fails.
 
-**Apply** (`.github/workflows/terraform-apply.yml`) runs only from `workflow_dispatch` on `main`. It never runs on push or on a pull request. The `plan` job prints the plan. The `apply` job is bound to the `production` environment, so it waits for the required reviewer. Read the plan job log, then approve only when the plan is what you expect. The first apply on this stack must be `6 to import, 0 to add, 0 to change, 0 to destroy`.
+**Apply** (`.github/workflows/terraform-apply.yml`) runs only from `workflow_dispatch` on `main`. It never runs on push or on a pull request. The `plan` job prints the plan. The `apply` job is bound to the `production` environment, so it waits for the required reviewer. Read the plan job log, then approve only when it is `10 to add, 0 to change, 1 to destroy` or `No changes`. Do not approve a plan that creates the Pages records without destroying `46.101.80.89`.
 
-## This pull request
-
-Merge it only when `terraform plan` shows imports and nothing else (or `No changes` if state was already imported). The six managed records are:
+## DNS records
 
 | Type | Name | Content | Priority | TTL | Proxied |
 | --- | --- | --- | --- | --- | --- |
-| A | jarvis.gg | 46.101.80.89 | | 1 (automatic) | true |
+| A | jarvis.gg | 185.199.108.153 | | 1 (automatic) | false |
+| A | jarvis.gg | 185.199.109.153 | | 1 (automatic) | false |
+| A | jarvis.gg | 185.199.110.153 | | 1 (automatic) | false |
+| A | jarvis.gg | 185.199.111.153 | | 1 (automatic) | false |
+| AAAA | jarvis.gg | 2606:50c0:8000::153 | | 1 (automatic) | false |
+| AAAA | jarvis.gg | 2606:50c0:8001::153 | | 1 (automatic) | false |
+| AAAA | jarvis.gg | 2606:50c0:8002::153 | | 1 (automatic) | false |
+| AAAA | jarvis.gg | 2606:50c0:8003::153 | | 1 (automatic) | false |
+| CNAME | www.jarvis.gg | jarvvski.github.io | | 1 (automatic) | false |
+| TXT | _github-pages-challenge-jarvvski.jarvis.gg | 8246776e59edf2bb27a58013c4317d | | 1 (automatic) | false |
 | MX | jarvis.gg | aspmx.l.google.com | 1 | 1 | false |
 | MX | jarvis.gg | alt1.aspmx.l.google.com | 5 | 1 | false |
 | MX | jarvis.gg | alt2.aspmx.l.google.com | 5 | 1 | false |
 | MX | jarvis.gg | aspmx2.googlemail.com | 10 | 1 | false |
 | MX | jarvis.gg | aspmx3.googlemail.com | 10 | 1 | false |
+
+After the Pages apply, verify the domain at <https://github.com/settings/pages_verified_domains/jarvis.gg>. Then in the `jarvvski.github.io` repository open Settings → Pages, set the custom domain to `jarvis.gg`, and turn on Enforce HTTPS. GitHub can take up to 24 hours before Enforce HTTPS is available.
 
 `comment` is null on every record, so the configuration leaves it unset. MX records use `content` and `priority`, which is the shape the DNS API returns for these rows (no `data` object).
 

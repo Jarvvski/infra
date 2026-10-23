@@ -20,19 +20,9 @@ import urllib.request
 
 ZONE_ID = os.environ.get("ZONE_ID", "25a69e647ecf731fb8268a02b55e8afa")
 
-# Values captured from the Cloudflare API on 2026-10-23. comment is null.
-# priority None means the API field must be absent or JSON null (the A record).
-EXPECTED = [
-    {
-        "address": "cloudflare_dns_record.apex",
-        "id": "b73d8cea608feae5a5179334ba81ba16",
-        "type": "A",
-        "name": "jarvis.gg",
-        "content": "46.101.80.89",
-        "priority": None,
-        "ttl": 1,
-        "proxied": True,
-    },
+# MX rows still imported from the 2026-10-23 API capture. comment is null.
+# priority None means the API field must be absent or JSON null.
+IMPORTED = [
     {
         "address": "cloudflare_dns_record.mx_aspmx",
         "id": "3a83636116fbdd503cd53b4dd308e0f0",
@@ -85,6 +75,71 @@ EXPECTED = [
     },
 ]
 
+# GitHub Pages records created by Terraform. Ids are assigned on apply.
+# Addresses match the docs checked on 2026-10-23. DNS only, TTL automatic.
+CREATED = [
+    {
+        "address": 'cloudflare_dns_record.apex_a["185.199.108.153"]',
+        "type": "A",
+        "name": "jarvis.gg",
+        "content": "185.199.108.153",
+    },
+    {
+        "address": 'cloudflare_dns_record.apex_a["185.199.109.153"]',
+        "type": "A",
+        "name": "jarvis.gg",
+        "content": "185.199.109.153",
+    },
+    {
+        "address": 'cloudflare_dns_record.apex_a["185.199.110.153"]',
+        "type": "A",
+        "name": "jarvis.gg",
+        "content": "185.199.110.153",
+    },
+    {
+        "address": 'cloudflare_dns_record.apex_a["185.199.111.153"]',
+        "type": "A",
+        "name": "jarvis.gg",
+        "content": "185.199.111.153",
+    },
+    {
+        "address": 'cloudflare_dns_record.apex_aaaa["2606:50c0:8000::153"]',
+        "type": "AAAA",
+        "name": "jarvis.gg",
+        "content": "2606:50c0:8000::153",
+    },
+    {
+        "address": 'cloudflare_dns_record.apex_aaaa["2606:50c0:8001::153"]',
+        "type": "AAAA",
+        "name": "jarvis.gg",
+        "content": "2606:50c0:8001::153",
+    },
+    {
+        "address": 'cloudflare_dns_record.apex_aaaa["2606:50c0:8002::153"]',
+        "type": "AAAA",
+        "name": "jarvis.gg",
+        "content": "2606:50c0:8002::153",
+    },
+    {
+        "address": 'cloudflare_dns_record.apex_aaaa["2606:50c0:8003::153"]',
+        "type": "AAAA",
+        "name": "jarvis.gg",
+        "content": "2606:50c0:8003::153",
+    },
+    {
+        "address": "cloudflare_dns_record.www",
+        "type": "CNAME",
+        "name": "www.jarvis.gg",
+        "content": "jarvvski.github.io",
+    },
+    {
+        "address": "cloudflare_dns_record.github_pages_challenge",
+        "type": "TXT",
+        "name": "_github-pages-challenge-jarvvski.jarvis.gg",
+        "content": "8246776e59edf2bb27a58013c4317d",
+    },
+]
+
 
 def fetch_records(zone_id: str, token: str) -> list[dict]:
     records: list[dict] = []
@@ -123,36 +178,57 @@ def _priority(record: dict):
     return record["priority"]
 
 
+def _check(address: str, live: dict, expected: dict) -> list[str]:
+    checks = {
+        "type": (live.get("type"), expected["type"]),
+        "name": (live.get("name"), expected["name"]),
+        "content": (live.get("content"), expected["content"]),
+        "ttl": (live.get("ttl"), expected.get("ttl", 1)),
+        "proxied": (live.get("proxied"), expected.get("proxied", False)),
+        "comment": (live.get("comment"), None),
+        "priority": (_priority(live), expected.get("priority")),
+    }
+    problems = []
+    for field, (actual, wanted) in checks.items():
+        if actual != wanted:
+            problems.append(f"{address} {field}: api={actual!r} config={wanted!r}")
+    return problems
+
+
 def compare(records: list[dict]) -> list[str]:
     """Return human-readable drift lines. Empty means the managed set matches."""
     by_id = {record.get("id"): record for record in records}
     problems: list[str] = []
-    expected_ids = {item["id"] for item in EXPECTED}
+    consumed: set[str] = set()
 
-    for item in EXPECTED:
+    for item in IMPORTED:
         live = by_id.get(item["id"])
         if live is None:
             problems.append(f"missing {item['address']} id={item['id']}")
             continue
-        checks = {
-            "type": (live.get("type"), item["type"]),
-            "name": (live.get("name"), item["name"]),
-            "content": (live.get("content"), item["content"]),
-            "ttl": (live.get("ttl"), item["ttl"]),
-            "proxied": (live.get("proxied"), item["proxied"]),
-            "comment": (live.get("comment"), None),
-            "priority": (_priority(live), item["priority"]),
-        }
-        for field, (actual, expected) in checks.items():
-            if actual != expected:
-                problems.append(
-                    f"{item['address']} {field}: api={actual!r} config={expected!r}"
-                )
+        consumed.add(item["id"])
+        problems.extend(_check(item["address"], live, item))
+
+    for item in CREATED:
+        matches = [
+            record
+            for record in records
+            if record.get("type") == item["type"]
+            and record.get("name") == item["name"]
+            and record.get("content") == item["content"]
+            and record.get("id") not in consumed
+        ]
+        if not matches:
+            problems.append(
+                f"missing {item['address']} {item['type']} {item['name']} {item['content']}"
+            )
+            continue
+        live = matches[0]
+        consumed.add(live["id"])
+        problems.extend(_check(item["address"], live, item))
 
     for record in records:
-        if record.get("id") in expected_ids:
-            continue
-        if record.get("type") == "NS":
+        if record.get("id") in consumed or record.get("type") == "NS":
             continue
         problems.append(
             "unmanaged {type} {name} content={content!r} id={id} "
@@ -185,9 +261,9 @@ def print_report(records: list[dict]) -> int:
         )
 
     print()
-    print("import blocks for the managed records:")
+    print("import blocks for the MX records:")
     print()
-    for item in EXPECTED:
+    for item in IMPORTED:
         print("import {")
         print(f"  to = {item['address']}")
         print(f'  id = "{ZONE_ID}/{item["id"]}"')
@@ -209,26 +285,28 @@ def print_report(records: list[dict]) -> int:
         return 1
 
     print("Managed records match the Terraform configuration.")
-    print("A terraform plan should be: 6 to import, 0 to add, 0 to change, 0 to destroy.")
-    print("After that import is applied, later plans should report no changes.")
+    print("After the GitHub Pages apply, terraform plan should report no changes.")
     return 0
 
 
+def _live_from(item: dict, record_id: str) -> dict:
+    record = {
+        "id": record_id,
+        "type": item["type"],
+        "name": item["name"],
+        "content": item["content"],
+        "ttl": item.get("ttl", 1),
+        "proxied": item.get("proxied", False),
+        "comment": None,
+    }
+    if item.get("priority") is not None:
+        record["priority"] = item["priority"]
+    return record
+
+
 def self_test() -> int:
-    sample = []
-    for item in EXPECTED:
-        record = {
-            "id": item["id"],
-            "type": item["type"],
-            "name": item["name"],
-            "content": item["content"],
-            "ttl": item["ttl"],
-            "proxied": item["proxied"],
-            "comment": None,
-        }
-        if item["priority"] is not None:
-            record["priority"] = item["priority"]
-        sample.append(record)
+    sample = [_live_from(item, item["id"]) for item in IMPORTED]
+    sample += [_live_from(item, f"created-{index}") for index, item in enumerate(CREATED)]
     sample.append(
         {
             "id": "ns1",
@@ -242,26 +320,27 @@ def self_test() -> int:
     )
     if compare(sample):
         print("self-test: matching fixture reported drift", file=sys.stderr)
+        print("\n".join(compare(sample)), file=sys.stderr)
         return 1
     drifted = json.loads(json.dumps(sample))
-    drifted[1]["priority"] = 99
+    drifted[0]["priority"] = 99
     if not compare(drifted):
         print("self-test: priority drift was ignored", file=sys.stderr)
         return 1
     extra = json.loads(json.dumps(sample))
     extra.append(
         {
-            "id": "txt1",
-            "type": "TXT",
+            "id": "old-apex",
+            "type": "A",
             "name": "jarvis.gg",
-            "content": "v=spf1",
+            "content": "46.101.80.89",
             "ttl": 1,
-            "proxied": False,
+            "proxied": True,
             "comment": None,
         }
     )
-    if not any("unmanaged TXT" in line for line in compare(extra)):
-        print("self-test: extra TXT was ignored", file=sys.stderr)
+    if not any("46.101.80.89" in line for line in compare(extra)):
+        print("self-test: old apex was ignored", file=sys.stderr)
         return 1
     print("self-test ok")
     return 0

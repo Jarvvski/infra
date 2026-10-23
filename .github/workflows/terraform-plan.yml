@@ -122,7 +122,7 @@ jobs:
               marker,
               "## Terraform plan (`cloudflare/jarvis-gg`)",
               "",
-              "This pull request must not change live DNS. A clean plan is either `No changes` or `N to import, 0 to add, 0 to change, 0 to destroy`.",
+              "After the import apply, the only accepted plan is `No changes` or `10 to add, 0 to change, 1 to destroy` (delete A 46.101.80.89, add GitHub Pages records, leave MX alone).",
               "",
               "```",
               plan.trimEnd(),
@@ -153,7 +153,7 @@ jobs:
               });
             }
 
-      - name: Reject plans that change DNS
+      - name: Require the GitHub Pages cutover plan
         if: steps.secrets.outputs.present == 'true' && steps.plan.outputs.status == 'ok'
         run: python3 scripts/assert-import-only-plan.py plan.txt
 
