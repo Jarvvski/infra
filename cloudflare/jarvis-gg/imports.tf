@@ -1,11 +1,8 @@
 # Record ids are public DNS identifiers, not secrets.
 # Import id format for provider v5 is "<zone_id>/<dns_record_id>".
-# Re-list them with scripts/list-dns-import-blocks.sh before the first apply.
-
-import {
-  to = cloudflare_dns_record.apex
-  id = "25a69e647ecf731fb8268a02b55e8afa/b73d8cea608feae5a5179334ba81ba16"
-}
+# The previous apex A record (46.101.80.89) is intentionally not imported.
+# Once that record is in state from the import apply, removing its resource
+# destroys it. MX imports stay so those records are not recreated.
 
 import {
   to = cloudflare_dns_record.mx_aspmx

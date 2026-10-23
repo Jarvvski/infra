@@ -3,19 +3,65 @@ locals {
   zone_id   = "25a69e647ecf731fb8268a02b55e8afa"
   zone_name = "jarvis.gg"
 
-  # ttl 1 is Cloudflare's "automatic" TTL. Captured from the live records.
+  # ttl 1 is Cloudflare's "automatic" TTL.
   ttl_automatic = 1
+
+  # GitHub Pages apex addresses, checked against
+  # https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/managing-a-custom-domain-for-your-github-pages-site
+  # on 2026-10-23. DNS only: proxied stays false.
+  github_pages_ipv4 = toset([
+    "185.199.108.153",
+    "185.199.109.153",
+    "185.199.110.153",
+    "185.199.111.153",
+  ])
+  github_pages_ipv6 = toset([
+    "2606:50c0:8000::153",
+    "2606:50c0:8001::153",
+    "2606:50c0:8002::153",
+    "2606:50c0:8003::153",
+  ])
 }
 
-# Live apex A record as of 2026-10-23. Proxied. A later change will point this
-# name at GitHub Pages; this stack keeps the current origin.
-resource "cloudflare_dns_record" "apex" {
+resource "cloudflare_dns_record" "apex_a" {
+  for_each = local.github_pages_ipv4
+
   zone_id = local.zone_id
   name    = local.zone_name
   type    = "A"
-  content = "46.101.80.89"
+  content = each.value
   ttl     = local.ttl_automatic
-  proxied = true
+  proxied = false
+}
+
+resource "cloudflare_dns_record" "apex_aaaa" {
+  for_each = local.github_pages_ipv6
+
+  zone_id = local.zone_id
+  name    = local.zone_name
+  type    = "AAAA"
+  content = each.value
+  ttl     = local.ttl_automatic
+  proxied = false
+}
+
+resource "cloudflare_dns_record" "www" {
+  zone_id = local.zone_id
+  name    = "www.${local.zone_name}"
+  type    = "CNAME"
+  content = "jarvvski.github.io"
+  ttl     = local.ttl_automatic
+  proxied = false
+}
+
+# GitHub Pages domain verification for the Jarvvski account. The token is public.
+resource "cloudflare_dns_record" "github_pages_challenge" {
+  zone_id = local.zone_id
+  name    = "_github-pages-challenge-jarvvski.${local.zone_name}"
+  type    = "TXT"
+  content = "8246776e59edf2bb27a58013c4317d"
+  ttl     = local.ttl_automatic
+  proxied = false
 }
 
 # Google Workspace MX set. The API returns content (mail host) and priority,

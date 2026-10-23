@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Exit 0 when a terraform plan does not add, change, or destroy anything.
 
-Import-only plans are allowed. Those adopt the existing jarvis.gg records
-and leave Cloudflare unchanged. Any other action fails the check.
+Import-only plans are allowed. This is the import pull request's gate.
+The GitHub Pages cutover adds and destroys records, so CI runs this only when
+the repository variable TF_PLAN_IMPORT_ONLY is true.
 """
 
 from __future__ import annotations
@@ -54,6 +55,8 @@ def evaluate(text: str) -> tuple[bool, str]:
 
 
 def main(argv: list[str]) -> int:
+    if argv == ["--self-test"]:
+        return self_test()
     if len(argv) != 1:
         print("usage: assert-import-only-plan.py PLAN.txt", file=sys.stderr)
         return 2
@@ -61,6 +64,40 @@ def main(argv: list[str]) -> int:
     ok, message = evaluate(text)
     print(message)
     return 0 if ok else 1
+
+
+def self_test() -> int:
+    cases = [
+        (
+            "  # cloudflare_dns_record.mx_aspmx will be imported\n"
+            "Plan: 5 to import, 0 to add, 0 to change, 0 to destroy.\n",
+            True,
+        ),
+        ("No changes. Your infrastructure matches the configuration.\n", True),
+        ("Plan: 0 to add, 0 to change, 0 to destroy.\n", True),
+        (
+            "  # cloudflare_dns_record.www will be created\n"
+            "  # cloudflare_dns_record.apex will be destroyed\n"
+            "Plan: 10 to add, 0 to change, 1 to destroy.\n",
+            False,
+        ),
+        (
+            "  # cloudflare_dns_record.mx_aspmx will be updated in-place\n"
+            "Plan: 0 to add, 1 to change, 0 to destroy.\n",
+            False,
+        ),
+        ("Error: no credentials\n", False),
+    ]
+    failed = 0
+    for index, (text, expect) in enumerate(cases):
+        ok, message = evaluate(text)
+        if ok != expect:
+            print(f"FAIL case {index}: {ok} {message}", file=sys.stderr)
+            failed += 1
+    if failed:
+        return 1
+    print("self-test ok")
+    return 0
 
 
 if __name__ == "__main__":
