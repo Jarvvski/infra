@@ -1,0 +1,9 @@
+# Copy this file to backend.hcl (gitignored) and replace <ACCOUNT_ID>.
+# The Cloudflare account id is on the dashboard overview page. It must stay
+# out of git. Use the host that matches the bucket jurisdiction:
+#   default: https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+#   EU:      https://<ACCOUNT_ID>.eu.r2.cloudflarestorage.com
+#   fedramp: https://<ACCOUNT_ID>.fedramp.r2.cloudflarestorage.com
+endpoints = {
+  s3 = "https://<ACCOUNT_ID>.r2.cloudflarestorage.com"
+}
